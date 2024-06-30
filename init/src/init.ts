@@ -2,7 +2,7 @@ import * as colors from "@std/fmt/colors";
 import * as path from "@std/path";
 
 // Keep these as is, as we replace these version in our release script
-const FRESH_VERSION = "2.0.0-alpha.14";
+const FRESH_VERSION = "2.0.0-alpha.18";
 const FRESH_TAILWIND_VERSION = "0.0.1-alpha.7";
 const PREACT_VERSION = "10.22.0";
 const PREACT_SIGNALS_VERSION = "1.2.3";
@@ -62,9 +62,11 @@ const realTTY: MockTTY = {
     return confirm(message);
   },
   log(...args) {
+    // deno-lint-ignore no-console
     console.log(...args);
   },
   logError(...args) {
+    // deno-lint-ignore no-console
     console.error(...args);
   },
 };
@@ -162,8 +164,9 @@ export async function initProject(
 
 # Fresh build directory
 _fresh/
-# npm dependencies
+# npm + other dependencies
 node_modules/
+vendor/
 `;
 
   await writeFile(".gitignore", GITIGNORE);
@@ -189,17 +192,23 @@ CMD ["run", "-A", "main.ts"]
     await writeFile("Dockerfile", DOCKERFILE_TEXT);
   }
 
-  const TAILWIND_CONFIG_TS = `import { type Config } from "tailwindcss";
+  const TAILWIND_CONFIG_TS = `import type { Config } from "tailwindcss";
 
 export default {
   content: [
     "{routes,islands,components}/**/*.{ts,tsx}",
   ],
-} satisfies Config;
-`;
+} satisfies Config;`;
   if (useTailwind) {
     await writeFile("tailwind.config.ts", TAILWIND_CONFIG_TS);
   }
+
+  const GRADIENT_CSS = `
+  .fresh-gradient {
+    background-color: rgb(134, 239, 172);
+    background-image: linear-gradient(to right bottom, rgb(219, 234, 254), rgb(187, 247, 208), rgb(254, 249, 195));
+  }
+  `;
 
   const NO_TAILWIND_STYLES = `
 *,
@@ -330,11 +339,15 @@ html {
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }
+
+${GRADIENT_CSS}
 `;
 
   const TAILWIND_CSS = `@tailwind base;
 @tailwind components;
-@tailwind utilities;`;
+@tailwind utilities;
+${GRADIENT_CSS}
+`;
 
   const cssStyles = useTailwind ? TAILWIND_CSS : NO_TAILWIND_STYLES;
   await writeFile("static/styles.css", cssStyles);
@@ -356,13 +369,26 @@ html {
     // Skip this and be silent if there is a network issue.
   }
 
-  const MAIN_TS = `import { App, staticFiles, fsRoutes } from "@fresh/core";
-import { State } from "./utils.ts";
+  const MAIN_TS = `import { App, fsRoutes, staticFiles } from "fresh";
+import { define, type State } from "./utils.ts";
 
 export const app = new App<State>();
 app.use(staticFiles());
 
-app.get("/api/:joke", () => new Response("Hello World"));
+// this is the same as the /api/:name route defined via a file. feel free to delete this!
+app.get("/api2/:name", (ctx) => {
+  const name = ctx.params.name;
+  return new Response(
+    \`Hello, \${name.charAt(0).toUpperCase() + name.slice(1)}!\`,
+  );
+});
+
+// this can also be defined via a file. feel free to delete this!
+const exampleLoggerMiddleware = define.middleware((ctx) => {
+  console.log(\`\${ctx.req.method} \${ctx.req.url}\`);
+  return ctx.next();
+});
+app.use(exampleLoggerMiddleware);
 
 await fsRoutes(app, {
   dir: "./",
@@ -372,16 +398,16 @@ await fsRoutes(app, {
 
 if (import.meta.main) {
   await app.listen();
-}
-`;
+}`;
   await writeFile("main.ts", MAIN_TS);
 
-  const COMPONENTS_BUTTON_TSX = `import { ComponentChildren } from "preact";
+  const COMPONENTS_BUTTON_TSX =
+    `import type { ComponentChildren } from "preact";
 
 export interface ButtonProps {
   onClick?: () => void;
   children?: ComponentChildren;
-  disabled?: boolean
+  disabled?: boolean;
 }
 
 export function Button(props: ButtonProps) {
@@ -391,17 +417,15 @@ export function Button(props: ButtonProps) {
       class="px-2 py-1 border-gray-500 border-2 rounded bg-white hover:bg-gray-200 transition-colors"
     />
   );
-}
-`;
+}`;
   await writeFile("components/Button.tsx", COMPONENTS_BUTTON_TSX);
 
-  const UTILS_TS = `import { createDefine } from "@fresh/core";
+  const UTILS_TS = `import { createDefine } from "fresh";
 
 // deno-lint-ignore no-empty-interface
 export interface State {}
 
-export const define = createDefine<State>();
-`;
+export const define = createDefine<State>();`;
   await writeFile("utils.ts", UTILS_TS);
 
   const ROUTES_HOME = `import { useSignal } from "@preact/signals";
@@ -412,7 +436,7 @@ export default define.page(function Home() {
   const count = useSignal(3);
 
   return (
-    <div class="px-4 py-8 mx-auto bg-[#86efac]">
+    <div class="px-4 py-8 mx-auto fresh-gradient">
       <div class="max-w-screen-md mx-auto flex flex-col items-center justify-center">
         <img
           class="my-6"
@@ -430,10 +454,10 @@ export default define.page(function Home() {
       </div>
     </div>
   );
-})`;
+});`;
   await writeFile("routes/index.tsx", ROUTES_HOME);
 
-  const APP_WRAPPER = `import { type PageProps } from "@fresh/core";
+  const APP_WRAPPER = `import type { PageProps } from "fresh";
 
 export default function App({ Component }: PageProps) {
   return (
@@ -452,6 +476,18 @@ export default function App({ Component }: PageProps) {
 }`;
   await writeFile("routes/_app.tsx", APP_WRAPPER);
 
+  const API_NAME = `import { define } from "../../utils.ts";
+
+export const handler = define.handlers({
+  GET(ctx) {
+    const name = ctx.params.name;
+    return new Response(
+      \`Hello, \${name.charAt(0).toUpperCase() + name.slice(1)}!\`,
+    );
+  },
+});`;
+  await writeFile("routes/api/[name].tsx", API_NAME);
+
   const ISLANDS_COUNTER_TSX = `import type { Signal } from "@preact/signals";
 import { Button } from "../components/Button.tsx";
 
@@ -467,24 +503,21 @@ export default function Counter(props: CounterProps) {
       <Button onClick={() => props.count.value += 1}>+1</Button>
     </div>
   );
-}
-`;
+}`;
   await writeFile("islands/Counter.tsx", ISLANDS_COUNTER_TSX);
 
   const DEV_TS = `#!/usr/bin/env -S deno run -A --watch=static/,routes/
-${useTailwind ? `import { tailwind } from "@fresh/plugin-tailwind";\n` : ""};
-import { Builder } from "@fresh/core/dev";
+${useTailwind ? `import { tailwind } from "@fresh/plugin-tailwind";\n` : ""}
+import { Builder } from "fresh/dev";
 import { app } from "./main.ts";
 
 const builder = new Builder();
-${useTailwind ? "tailwind(builder, app, {});\n" : "\n"}
-
+${useTailwind ? "tailwind(builder, app, {});" : ""}
 if (Deno.args.includes("build")) {
   await builder.build(app);
 } else {
   await builder.listen(app);
-}
-`;
+}`;
   await writeFile("dev.ts", DEV_TS);
 
   const denoJson = {
@@ -501,9 +534,10 @@ if (Deno.args.includes("build")) {
         tags: ["fresh", "recommended"],
       },
     },
+    lock: true,
     exclude: ["**/_fresh/*"],
     imports: {
-      "@fresh/core": `jsr:@fresh/core@^${FRESH_VERSION}`,
+      "fresh": `jsr:@fresh/core@^${FRESH_VERSION}`,
       "@fresh/plugin-tailwind":
         `jsr:@fresh/plugin-tailwind@^${FRESH_TAILWIND_VERSION}`,
       "preact": `npm:preact@^${PREACT_VERSION}`,
@@ -511,8 +545,16 @@ if (Deno.args.includes("build")) {
     } as Record<string, string>,
     compilerOptions: {
       lib: ["dom", "dom.asynciterable", "deno.ns"],
-      jsx: "react-jsx",
+      jsx: "precompile",
       jsxImportSource: "preact",
+      jsxPrecompileSkipElements: [
+        "a",
+        "img",
+        "source",
+        "body",
+        "html",
+        "head",
+      ],
     },
   };
 
@@ -538,8 +580,7 @@ Then start the project in development mode:
 deno task dev
 \`\`\`
 
-This will watch the project directory and restart as necessary.
-`;
+This will watch the project directory and restart as necessary.`;
   await writeFile("README.md", README_MD);
 
   if (useVSCode) {

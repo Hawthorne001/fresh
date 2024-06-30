@@ -1,4 +1,4 @@
-import type { FreshContext } from "@fresh/core";
+import type { FreshContext } from "fresh";
 import type { Event } from "$ga4";
 import { GA4Report, isDocument, isServerError } from "$ga4";
 
@@ -16,6 +16,7 @@ function ga4(
   if (GA4_MEASUREMENT_ID === undefined) {
     if (!showedMissingEnvWarning) {
       showedMissingEnvWarning = true;
+      // deno-lint-ignore no-console
       console.warn(
         "GA4_MEASUREMENT_ID environment variable not set. Google Analytics reporting disabled.",
       );
@@ -81,6 +82,7 @@ function ga4(
 
     await report.send();
   }).catch((err) => {
+    // deno-lint-ignore no-console
     console.error(err);
   });
 }

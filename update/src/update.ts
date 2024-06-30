@@ -2,9 +2,9 @@ import * as path from "@std/path";
 import * as JSONC from "@std/jsonc";
 import * as tsmorph from "ts-morph";
 
-const SyntaxKind = tsmorph.ts.SyntaxKind;
+export const SyntaxKind = tsmorph.ts.SyntaxKind;
 
-export const FRESH_VERSION = "2.0.0-alpha.14";
+export const FRESH_VERSION = "2.0.0-alpha.18";
 export const PREACT_VERSION = "10.22.0";
 export const PREACT_SIGNALS_VERSION = "1.2.3";
 
@@ -57,7 +57,7 @@ async function updateDenoJson(
   throw new Error(`Could not find deno.json or deno.jsonc in: ${dir}`);
 }
 
-interface ImportState {
+export interface ImportState {
   core: Set<string>;
   runtime: Set<string>;
   compat: Set<string>;
@@ -83,7 +83,7 @@ export async function updateProject(dir: string) {
       config.imports = {};
     }
 
-    config.imports["@fresh/core"] = `jsr:@fresh/core@^${FRESH_VERSION}`;
+    config.imports["fresh"] = `jsr:@fresh/core@^${FRESH_VERSION}`;
     config.imports["preact"] = `npm:preact@^${PREACT_VERSION}`;
     config.imports["@preact/signals"] =
       `npm:@preact/signals@^${PREACT_SIGNALS_VERSION}`;
@@ -101,6 +101,7 @@ export async function updateProject(dir: string) {
     try {
       return await updateFile(sourceFile);
     } catch (err) {
+      // deno-lint-ignore no-console
       console.error(`Could not process ${sourceFile.getFilePath()}`);
       throw err;
     }
@@ -233,7 +234,7 @@ async function updateFile(sourceFile: tsmorph.SourceFile): Promise<void> {
       removeEmptyImport(d);
     } else if (specifier === "$fresh/server.ts") {
       hasCoreImport = true;
-      d.setModuleSpecifier("@fresh/core");
+      d.setModuleSpecifier("fresh");
 
       for (const n of d.getNamedImports()) {
         const name = n.getName();
@@ -252,7 +253,7 @@ async function updateFile(sourceFile: tsmorph.SourceFile): Promise<void> {
       removeEmptyImport(d);
     } else if (specifier === "$fresh/runtime.ts") {
       hasRuntimeImport = true;
-      d.setModuleSpecifier("@fresh/core/runtime");
+      d.setModuleSpecifier("fresh/runtime");
 
       for (const n of d.getNamedImports()) {
         const name = n.getName();
@@ -270,19 +271,19 @@ async function updateFile(sourceFile: tsmorph.SourceFile): Promise<void> {
 
   if (!hasCoreImport && newImports.core.size > 0) {
     sourceFile.addImportDeclaration({
-      moduleSpecifier: "@fresh/core",
+      moduleSpecifier: "fresh",
       namedImports: Array.from(newImports.core),
     });
   }
   if (!hasRuntimeImport && newImports.runtime.size > 0) {
     sourceFile.addImportDeclaration({
-      moduleSpecifier: "@fresh/core/runtime",
+      moduleSpecifier: "fresh/runtime",
       namedImports: Array.from(newImports.core),
     });
   }
   if (newImports.compat.size > 0) {
     sourceFile.addImportDeclaration({
-      moduleSpecifier: "@fresh/core/compat",
+      moduleSpecifier: "fresh/compat",
       namedImports: Array.from(newImports.compat),
     });
   }
@@ -348,6 +349,7 @@ function maybePrependReqVar(
     if (method.isKind(SyntaxKind.ArrowFunction)) {
       const body = method.getBody();
       if (!body.isKind(SyntaxKind.Block)) {
+        // deno-lint-ignore no-console
         console.warn(`Cannot transform arrow function`);
         return;
       }

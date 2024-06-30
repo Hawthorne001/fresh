@@ -4,12 +4,14 @@ import type { DenoJson } from "../update/src/update.ts";
 import * as semver from "@std/semver";
 
 function showHelp() {
+  // deno-lint-ignore no-console
   console.log(`
   Usage: deno run -A release.ts <major|minor|patch|...>
 `);
 }
 
 function exitError(msg: string): never {
+  // deno-lint-ignore no-console
   console.error(cl.red(msg));
   showHelp();
   Deno.exit(1);
@@ -29,7 +31,11 @@ const version = Deno.args[0];
 const current = semver.parse(denoJson.version!);
 const next = semver.parse(denoJson.version!);
 if (version === "major") {
-  next.major++;
+  if (next.prerelease) {
+    next.prerelease = undefined;
+  } else {
+    next.major++;
+  }
 } else if (version === "minor") {
   next.minor++;
 } else if (version === "patch") {
@@ -67,8 +73,11 @@ function formatUpgradeMsg(
   return `  ${nameMsg}: ${fromMsg} -> ${toMsg}`;
 }
 
+// deno-lint-ignore no-console
 console.log(formatUpgradeMsg(denoJson.name!, current, next));
+// deno-lint-ignore no-console
 console.log(formatUpgradeMsg(initJson.name!, currentInit, next));
+// deno-lint-ignore no-console
 console.log(formatUpgradeMsg(updateJson.name!, currentUpdate, next));
 
 if (!confirm("Proceed with update?")) {
